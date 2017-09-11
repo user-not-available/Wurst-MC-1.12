@@ -1,5 +1,5 @@
 /*
- * Copyright © 2014 - 2017 | Wurst-Imperium | All rights reserved.
+ * Copyright Â© 2014 - 2017 | Wurst-Imperium | All rights reserved.
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -27,117 +27,68 @@ public final class StepMod extends Mod implements UpdateListener
 		new ModeSetting("Mode", new String[]{"Simple", "Legit"}, 1)
 		{
 			@Override
-			public void update()
-			{
-				height.setDisabled(getSelected() == 1);
-			}
-		};
-	private final SliderSetting height =
-		new SliderSetting("Height", 1, 1, 100, 1, ValueDisplay.INTEGER);
-	
-	public StepMod()
-	{
-		super("Step",
-			"Allows you to step up full blocks.\n"
-				+ "§lSimple§r mode can step up multiple blocks (enables Height slider).\n"
-				+ "§lLegit§r mode can bypass NoCheat+.");
-		setCategory(Category.MOVEMENT);
-	}
-	
-	@Override
-	public void initSettings()
-	{
-		addSetting(mode);
-		addSetting(height);
-	}
-	
-	@Override
-	public void onEnable()
-	{
-		wurst.events.add(UpdateListener.class, this);
-	}
-	
-	@Override
-	public void onDisable()
-	{
-		wurst.events.remove(UpdateListener.class, this);
-		WMinecraft.getPlayer().stepHeight = 0.5F;
-	}
-	
-	@Override
-	public void onUpdate()
-	{
-		if(mode.getSelected() == 0)
-		{
-			// simple mode
-			WMinecraft.getPlayer().stepHeight = height.getValueF();
-			return;
-		}
-		
-		// legit mode
-		EntityPlayerSP player = WMinecraft.getPlayer();
-		player.stepHeight = 0.5F;
-		
-		if(!player.isCollidedHorizontally)
-			return;
-		
-		if(!player.onGround || player.isOnLadder() || player.isInWater()
-			|| player.isInLava())
-			return;
-		
-		if(player.movementInput.moveForward == 0
-			&& player.movementInput.moveStrafe == 0)
-			return;
-		
-		if(player.movementInput.jump)
-			return;
-		
-		AxisAlignedBB box =
-			player.getEntityBoundingBox().offset(0, 0.05, 0).expandXyz(0.05);
-		
-		if(!WMinecraft.getWorld().getCollisionBoxes(player, box.offset(0, 1, 0))
-			.isEmpty())
-			return;
-		
-		double stepHeight = -1;
-		for(AxisAlignedBB bb : WMinecraft.getWorld().getCollisionBoxes(player,
-			box))
-			if(bb.maxY > stepHeight)
-				stepHeight = bb.maxY;
-		stepHeight = stepHeight - player.posY;
-		
-		if(stepHeight < 0 || stepHeight > 1)
-			return;
-		
-		WConnection.sendPacket(new CPacketPlayer.Position(player.posX,
-			player.posY + 0.42 * stepHeight, player.posZ, player.onGround));
-		WConnection.sendPacket(new CPacketPlayer.Position(player.posX,
-			player.posY + 0.753 * stepHeight, player.posZ, player.onGround));
-		player.setPosition(player.posX, player.posY + 1 * stepHeight,
-			player.posZ);
-	}
-	
-	@Override
-	public void onYesCheatUpdate(Profile profile)
-	{
-		switch(profile)
-		{
-			default:
-			case OFF:
-			case MINEPLEX:
-			mode.unlock();
-			break;
-			
-			case ANTICHEAT:
-			case OLDER_NCP:
-			case LATEST_NCP:
-			mode.lock(1);
-			break;
-		}
-	}
-	
-	public boolean isAutoJumpAllowed()
-	{
-		return !isActive() && !wurst.commands.goToCmd.isActive();
-	}
+    public void onDisabled() {
+        if(getLocalPlayer() != null) {
+            getLocalPlayer().stepHeight = DEFAULT_STEP_HEIGHT;
+        }
+    }
+
+    @SubscribeEvent
+    public void onLocalPlayerUpdate(LocalPlayerUpdateEvent event) {
+        EntityPlayer localPlayer = (EntityPlayer)event.getEntityLiving();
+        if(localPlayer.onGround) {
+            localPlayer.stepHeight = 1.f;
+        } else {
+            localPlayer.stepHeight = DEFAULT_STEP_HEIGHT;
+        }
+    }
+
+    private CPacketPlayer previousPositionPacket = null;
+
+    @SubscribeEvent
+    public void onPacketSending(PacketEvent.Outgoing.Pre event) {
+        if(event.getPacket() instanceof CPacketPlayer.Position ||
+                event.getPacket() instanceof CPacketPlayer.PositionRotation) {
+            CPacketPlayer packetPlayer = (CPacketPlayer)event.getPacket();
+            if(previousPositionPacket != null &&
+                    !PacketHelper.isIgnored(event.getPacket())) {
+                double diffY = packetPlayer.getY(0.f) - previousPositionPacket.getY(0.f);
+                // y difference must be positive
+                // greater than 1, but less than 1.5
+                if(diffY > DEFAULT_STEP_HEIGHT &&
+                        diffY <= 1.2491870787) {
+                    List<Packet> sendList = Lists.newArrayList();
+                    // if this is true, this must be a step
+                    // now to send additional packets to get around NCP
+                    double x = previousPositionPacket.getX(0.D);
+                    double y = previousPositionPacket.getY(0.D);
+                    double z = previousPositionPacket.getZ(0.D);
+                    sendList.add(new CPacketPlayer.Position(
+                            x,
+                            y + 0.4199999869D,
+                            z,
+                            true
+                    ));
+                    sendList.add(new CPacketPlayer.Position(
+                            x,
+                            y + 0.7531999805D,
+                            z,
+                            true
+                    ));
+                    sendList.add(new CPacketPlayer.Position(
+                            packetPlayer.getX(0.f),
+                            packetPlayer.getY(0.f),
+                            packetPlayer.getZ(0.f),
+                            packetPlayer.isOnGround()
+                    ));
+                    for(Packet toSend : sendList) {
+                        PacketHelper.ignore(toSend);
+                        getNetworkManager().sendPacket(toSend);
+                    }
+                    event.setCanceled(true);
+                }
+            }
+            previousPositionPacket = (CPacketPlayer)event.getPacket();
+        }
+    }
 }
