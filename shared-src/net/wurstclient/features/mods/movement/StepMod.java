@@ -7,6 +7,9 @@
  */
 package net.wurstclient.features.mods.movement;
 
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.network.Packet;]
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.network.play.client.CPacketPlayer;
 import net.minecraft.util.math.AxisAlignedBB;
